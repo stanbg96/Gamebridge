@@ -222,6 +222,12 @@ fun MainScreen(
                     Text("Machine: ${result.machine}")
                     Text("Subsystem: ${result.subsystem}")
                     Text("Details: ${result.note}")
+                    Text("PE Format: ${result.peFormat}")
+                    Text("File Size: ${result.fileSize}")
+                    Text("Entry Point: ${result.entryPoint}")
+                    Text("Sections: ${result.sectionCount}")
+                    Text("Section Names: ${result.sections}")
+                    Text("File Type: ${result.fileType}")
                 }
             }
         }
