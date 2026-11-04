@@ -110,7 +110,7 @@ class MainActivity : ComponentActivity() {
    it.sources and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
   }
   controllerReport=if(list.isEmpty()) "No gamepad detected. Pair a Bluetooth controller and refresh." else
-   list.joinToString("\n") { "• ${it.name} (id ${it.id})" }
+    list.joinToString("\n") { device -> "• ${device.name} (id ${device.id})" }
  }
  override fun dispatchKeyEvent(event:KeyEvent):Boolean {
   if(event.source and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD ||
