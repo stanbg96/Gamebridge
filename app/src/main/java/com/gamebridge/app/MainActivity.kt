@@ -105,13 +105,20 @@ class MainActivity : ComponentActivity() {
  }
  private fun refreshControllers() {
   val ids=InputDevice.getDeviceIds()
-  val list=ids.mapNotNull { InputDevice.getDevice(it) }.filter {
-   it.sources and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD ||
-   it.sources and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
-  }
-  controllerReport=if(list.isEmpty()) "No gamepad detected. Pair a Bluetooth controller and refresh." else
-    list.joinToString("\n") { device -> "• ${device.name} (id ${device.id})" }
- }
+  val list: List<InputDevice> = ids
+        .mapNotNull { deviceId -> InputDevice.getDevice(deviceId) }
+        .filter { device ->
+            (device.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+            (device.sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+        }
+
+    controllerReport = if (list.isEmpty()) {
+        "No gamepad detected. Pair a Bluetooth controller and refresh."
+    } else {
+        list.joinToString("\n") { device ->
+            "• ${device.name} (id ${device.id})"
+        }
+    }
  override fun dispatchKeyEvent(event:KeyEvent):Boolean {
   if(event.source and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD ||
      event.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK) return super.dispatchKeyEvent(event)
