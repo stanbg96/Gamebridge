@@ -227,7 +227,7 @@ fun MainScreen(
                     Text("Entry Point: ${result.entryPoint}")
                     Text("Sections: ${result.sectionCount}")
                     Text("Section Names:")
-                    result.sections.split(", ").forEach { section ->
+                    result.sections.forEach { section ->
                         Text("• $section")
                     }
                     Text("File Type: ${result.fileType}")
