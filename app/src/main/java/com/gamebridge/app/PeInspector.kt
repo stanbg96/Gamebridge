@@ -1,9 +1,9 @@
-
 package com.gamebridge.app
 
 import android.content.ContentResolver
 import android.net.Uri
 import android.provider.OpenableColumns
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -24,100 +24,84 @@ data class PeInfo(
 
 object PeInspector {
 
-    private const val HEADER_SAMPLE_SIZE = 8192
+    private const val MAX_HEADER_BYTES = 1024 * 1024
+    private const val SECTION_HEADER_SIZE = 40
+    private const val MAX_SECTIONS = 96
 
     fun inspect(
         resolver: ContentResolver,
         uri: Uri,
         name: String
     ): PeInfo {
+        val fileSize = getFileSize(resolver, uri)
+
         return try {
-            val fileSize = getFileSize(resolver, uri)
-
             val bytes = resolver.openInputStream(uri)?.use { input ->
-                val sample = ByteArray(HEADER_SAMPLE_SIZE)
-                val n = input.read(sample)
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(4096)
+                var total = 0
+                var count: Int
 
-                if (n > 0) sample.copyOf(n) else byteArrayOf()
+                while (
+                    total < MAX_HEADER_BYTES &&
+                    input.read(buffer, 0, minOf(buffer.size, MAX_HEADER_BYTES - total))
+                        .also { count = it } > 0
+                ) {
+                    output.write(buffer, 0, count)
+                    total += count
+                }
+
+                output.toByteArray()
             } ?: byteArrayOf()
 
             if (
                 bytes.size < 64 ||
-                bytes[0] != 0x4d.toByte() ||
-                bytes[1] != 0x5a.toByte()
+                bytes[0] != 0x4D.toByte() ||
+                bytes[1] != 0x5A.toByte()
             ) {
-                return PeInfo(
-                    fileName = name,
-                    isPe = false,
-                    fileSize = fileSize,
-                    note = "No MZ header"
-                )
+                return invalid(name, fileSize, "No MZ header")
             }
 
-            val buffer = ByteBuffer
-                .wrap(bytes)
-                .order(ByteOrder.LITTLE_ENDIAN)
+            val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
 
-            val peOffset = buffer.getInt(0x3c).toLong() and 0xffffffffL
+            val peOffset = buffer.getInt(0x3C).toLong() and 0xFFFFFFFFL
 
             if (
-                peOffset > bytes.size - 24 ||
                 peOffset < 64 ||
+                peOffset + 24L > bytes.size ||
                 buffer.getInt(peOffset.toInt()) != 0x00004550
             ) {
-                return PeInfo(
-                    fileName = name,
-                    isPe = false,
-                    fileSize = fileSize,
-                    note = "MZ found; PE signature not available"
-                )
+                return invalid(name, fileSize, "PE signature not found or incomplete")
             }
 
             val coffOffset = peOffset.toInt() + 4
-
-            val machineCode = buffer
-                .getShort(coffOffset)
-                .toInt() and 0xffff
-
-            val sectionCount = buffer
-                .getShort(coffOffset + 2)
-                .toInt() and 0xffff
-
-            val optionalHeaderSize = buffer
-                .getShort(coffOffset + 16)
-                .toInt() and 0xffff
-
-            val characteristics = buffer
-                .getShort(coffOffset + 18)
-                .toInt() and 0xffff
+            val machineCode = buffer.getShort(coffOffset).toInt() and 0xFFFF
+            val sectionCount = buffer.getShort(coffOffset + 2).toInt() and 0xFFFF
+            val optionalHeaderSize =
+                buffer.getShort(coffOffset + 16).toInt() and 0xFFFF
+            val characteristics =
+                buffer.getShort(coffOffset + 18).toInt() and 0xFFFF
 
             val optionalOffset = coffOffset + 20
+            val optionalEnd = optionalOffset.toLong() + optionalHeaderSize
 
             if (
                 optionalHeaderSize < 2 ||
-                optionalOffset.toLong() + optionalHeaderSize > bytes.size
+                optionalEnd > bytes.size
             ) {
-                return PeInfo(
-                    fileName = name,
-                    isPe = false,
-                    fileSize = fileSize,
-                    note = "Optional header is incomplete"
-                )
+                return invalid(name, fileSize, "Optional header is incomplete")
             }
 
-            val magic = buffer
-                .getShort(optionalOffset)
-                .toInt() and 0xffff
+            val magic = buffer.getShort(optionalOffset).toInt() and 0xFFFF
 
             val peFormat = when (magic) {
-                0x10b -> "PE32"
-                0x20b -> "PE32+"
+                0x10B -> "PE32"
+                0x20B -> "PE32+"
                 else -> "Unknown"
             }
 
             val entryPoint = if (optionalHeaderSize >= 20) {
-                "0x" + buffer
-                    .getInt(optionalOffset + 16)
+                "0x" + buffer.getInt(optionalOffset + 16)
                     .toUInt()
                     .toString(16)
                     .uppercase()
@@ -126,14 +110,16 @@ object PeInspector {
             }
 
             val subsystem = if (optionalHeaderSize >= 70) {
-                when (
-                    buffer.getShort(optionalOffset + 68).toInt() and 0xffff
-                ) {
+                when (buffer.getShort(optionalOffset + 68).toInt() and 0xFFFF) {
                     1 -> "Native"
                     2 -> "Windows GUI"
                     3 -> "Windows Console"
                     9 -> "Windows CE GUI"
                     10 -> "EFI Application"
+                    11 -> "EFI Boot Service Driver"
+                    12 -> "EFI Runtime Driver"
+                    13 -> "EFI ROM"
+                    14 -> "Xbox"
                     else -> "Other"
                 }
             } else {
@@ -141,53 +127,55 @@ object PeInspector {
             }
 
             val machine = when (machineCode) {
-                0x014c -> "Intel x86"
+                0x014C -> "Intel x86"
                 0x8664 -> "AMD64"
-                0x01c0 -> "ARM"
-                0x01c4 -> "ARMv7"
-                0xaa64 -> "ARM64"
-                else -> "Unknown 0x${machineCode.toString(16)}"
+                0x01C0 -> "ARM"
+                0x01C4 -> "ARMv7"
+                0xAA64 -> "ARM64"
+                else -> "Unknown 0x${machineCode.toString(16).uppercase()}"
             }
 
             val architecture = when (machineCode) {
-                0x014c -> "x86 32-bit"
+                0x014C -> "x86 32-bit"
                 0x8664 -> "x86-64"
-                0x01c0,
-                0x01c4 -> "ARM 32-bit"
-                0xaa64 -> "ARM64"
+                0x01C0, 0x01C4 -> "ARM 32-bit"
+                0xAA64 -> "ARM64"
                 else -> "Unknown"
             }
 
-            val fileType = if ((characteristics and 0x2000) != 0) {
-                "DLL"
-            } else {
-                "EXE"
-            }
+            val fileType =
+                if ((characteristics and 0x2000) != 0) "DLL" else "EXE"
 
-            val sectionTableOffset =
-                optionalOffset + optionalHeaderSize
-
+            val sectionTableOffset = optionalEnd.toInt()
             val sections = mutableListOf<String>()
+            val readableSectionCount = sectionCount.coerceAtMost(MAX_SECTIONS)
 
-            for (i in 0 until sectionCount.coerceAtMost(96)) {
-                val sectionOffset = sectionTableOffset + i * 40
+            for (i in 0 until readableSectionCount) {
+                val sectionOffset =
+                    sectionTableOffset + i * SECTION_HEADER_SIZE
 
-                if (sectionOffset + 40 > bytes.size) {
+                if (sectionOffset.toLong() + SECTION_HEADER_SIZE > bytes.size) {
                     break
                 }
 
                 val nameBytes = ByteArray(8)
-
-                for (j in 0 until 8) {
-                    nameBytes[j] = bytes[sectionOffset + j]
-                }
+                System.arraycopy(bytes, sectionOffset, nameBytes, 0, 8)
 
                 val sectionName = nameBytes
                     .toString(Charsets.US_ASCII)
                     .trimEnd('\u0000')
                     .ifEmpty { "Unnamed" }
 
-                sections.add(sectionName)
+                val virtualSize =
+                    buffer.getInt(sectionOffset + 8).toLong() and 0xFFFFFFFFL
+                val rawSize =
+                    buffer.getInt(sectionOffset + 16).toLong() and 0xFFFFFFFFL
+                val rawOffset =
+                    buffer.getInt(sectionOffset + 20).toLong() and 0xFFFFFFFFL
+
+                sections.add(
+                    "$sectionName | Virtual: $virtualSize | Raw: $rawSize | Offset: 0x${rawOffset.toString(16).uppercase()}"
+                )
             }
 
             PeInfo(
@@ -204,15 +192,21 @@ object PeInspector {
                 sections = sections,
                 fileType = fileType
             )
-
         } catch (e: Exception) {
-            PeInfo(
-                fileName = name,
-                isPe = false,
-                note = e.message ?: "Inspection error"
-            )
+            invalid(name, fileSize, e.message ?: "Inspection error")
         }
     }
+
+    private fun invalid(
+        name: String,
+        fileSize: Long,
+        message: String
+    ) = PeInfo(
+        fileName = name,
+        isPe = false,
+        fileSize = fileSize,
+        note = message
+    )
 
     private fun getFileSize(
         resolver: ContentResolver,
@@ -228,7 +222,6 @@ object PeInspector {
             )?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val index = cursor.getColumnIndex(OpenableColumns.SIZE)
-
                     if (index >= 0) cursor.getLong(index) else -1L
                 } else {
                     -1L
@@ -239,4 +232,3 @@ object PeInspector {
         }
     }
 }
-
