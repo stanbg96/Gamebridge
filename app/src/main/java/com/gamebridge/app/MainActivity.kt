@@ -226,7 +226,10 @@ fun MainScreen(
                     Text("File Size: ${result.fileSize}")
                     Text("Entry Point: ${result.entryPoint}")
                     Text("Sections: ${result.sectionCount}")
-                    Text("Section Names: ${result.sections}")
+                    Text("Section Names:")
+                    result.sections.split(", ").forEach { section ->
+                        Text("• $section")
+                    }
                     Text("File Type: ${result.fileType}")
                 }
             }
