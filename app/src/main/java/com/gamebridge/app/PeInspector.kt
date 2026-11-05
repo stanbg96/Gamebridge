@@ -40,7 +40,7 @@ object PeInspector {
                 val output = ByteArrayOutputStream()
                 val buffer = ByteArray(4096)
                 var total = 0
-                var count: Int
+                var count = 0
 
                 while (
                     total < MAX_HEADER_BYTES &&
