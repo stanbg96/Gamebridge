@@ -87,6 +87,7 @@ fun MainScreen(
     var peResult by remember { mutableStateOf<PeInfo?>(null) }
     var peError by remember { mutableStateOf<String?>(null) }
     var isAnalyzing by remember { mutableStateOf(false) }
+    var cloudBuildStatus by remember { mutableStateOf("CLOUD BACKEND NOT CONNECTED") }
 
     val scope = rememberCoroutineScope()
 
@@ -231,6 +232,44 @@ fun MainScreen(
                         Text("• $section")
                     }
                     Text("File Type: ${result.fileType}")
+                }
+            }
+        }
+
+        Text(
+            text = "Cloud Build Pipeline",
+            style = MaterialTheme.typography.titleMedium
+        )
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Phone analysis → Cloud recompilation → Android APK")
+                Text(
+                    text = "Status: $cloudBuildStatus",
+                    color = if (cloudBuildStatus == "CLOUD BACKEND NOT CONNECTED") {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
+                )
+                Text(
+                    "The app can inspect PE metadata locally. A secure cloud service must be configured " +
+                        "before a real build request can be submitted or an APK returned."
+                )
+                Button(
+                    onClick = {
+                        cloudBuildStatus = if (peResult?.isPe == true) {
+                            "READY TO SUBMIT — cloud service endpoint is not configured"
+                        } else {
+                            "SELECT AND ANALYZE A VALID .EXE OR .DLL FIRST"
+                        }
+                    },
+                    enabled = !isAnalyzing
+                ) {
+                    Text("Prepare Cloud Build Request")
                 }
             }
         }
