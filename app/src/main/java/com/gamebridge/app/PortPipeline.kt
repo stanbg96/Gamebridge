@@ -25,6 +25,6 @@ object PortPipeline {
         }
         lines += "5. Required next: identify engine, available source/porting rights, platform APIs, and renderer."
         lines += "6. Backend: NONE CONNECTED — no APK conversion was performed."
-        return lines.joinToString("\\n")
+        return lines.joinToString("\n")
     }
 }
